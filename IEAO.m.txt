@@ -1,0 +1,83 @@
+function [OptimalCatalysis, BestSubstrate, conv_curve, ParamHistory] = IEAO(EnzymeCount, MaxIter, LB, UB, ActiveSiteDimension, EvaluateCatalysis)
+if isscalar(LB), LB = LB * ones(1, ActiveSiteDimension); end
+if isscalar(UB), UB = UB * ones(1, ActiveSiteDimension); end
+
+SubstratePool = LB + (UB - LB) .* rand(EnzymeCount, ActiveSiteDimension);
+ReactionRate = arrayfun(@(i) EvaluateCatalysis(SubstratePool(i,:)), 1:EnzymeCount)';
+[OptimalCatalysis, idx] = min(ReactionRate);
+BestSubstrate = SubstratePool(idx,:);
+conv_curve = zeros(1, MaxIter);
+ParamHistory = zeros(MaxIter, ActiveSiteDimension);
+
+for t = 1:MaxIter
+    AF = 0.5 + 0.5 * sin(pi * t / MaxIter);  % adaptif AF
+    EC = 0.3 + 0.2 * rand();                % dinamik EC
+
+    for i = 1:EnzymeCount
+        First = (BestSubstrate - SubstratePool(i,:)) + rand(1, ActiveSiteDimension) ...
+                .* sin(AF * SubstratePool(i,:));
+        First = max(min(First, UB), LB);
+        Eval1 = EvaluateCatalysis(First);
+
+        r = randperm(EnzymeCount, 2);
+        while any(r == i)
+            r = randperm(EnzymeCount, 2);
+        end
+        S1 = SubstratePool(r(1), :);
+        S2 = SubstratePool(r(2), :);
+
+        scA = EC + (1 - EC) * rand(1, ActiveSiteDimension);
+        exA = (EC + (1 - EC) * rand(1, ActiveSiteDimension)) .* AF;
+        A = SubstratePool(i,:) + scA .* (S1 - S2) + exA .* (BestSubstrate - SubstratePool(i,:));
+        A = max(min(A, UB), LB);
+        EvalA = EvaluateCatalysis(A);
+
+        scB = EC + (1 - EC) * rand();
+        exB = (EC + (1 - EC) * rand()) * AF;
+        B = SubstratePool(i,:) + scB .* (S1 - S2) + exB .* (BestSubstrate - SubstratePool(i,:));
+        B = max(min(B, UB), LB);
+        EvalB = EvaluateCatalysis(B);
+
+        if EvalA < EvalB
+            Second = A;
+            Eval2 = EvalA;
+        else
+            Second = B;
+            Eval2 = EvalB;
+        end
+
+        if Eval1 < Eval2
+            Final = First;
+            EvalFinal = Eval1;
+        else
+            Final = Second;
+            EvalFinal = Eval2;
+        end
+
+        if EvalFinal < ReactionRate(i)
+            SubstratePool(i,:) = Final;
+            ReactionRate(i) = EvalFinal;
+            if EvalFinal < OptimalCatalysis
+                OptimalCatalysis = EvalFinal;
+                BestSubstrate = Final;
+            end
+        end
+    end
+
+    % Local Search (yerel arama)
+    for d = 1:ActiveSiteDimension
+        delta = 0.005 * (UB(d) - LB(d));
+        trial = BestSubstrate;
+        trial(d) = trial(d) + delta * (2 * rand - 1);
+        trial = max(min(trial, UB), LB);
+        f_trial = EvaluateCatalysis(trial);
+        if f_trial < OptimalCatalysis
+            OptimalCatalysis = f_trial;
+            BestSubstrate = trial;
+        end
+    end
+
+    conv_curve(t) = OptimalCatalysis;
+    ParamHistory(t,:) = BestSubstrate;
+end
+end
